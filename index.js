@@ -1,62 +1,60 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const axios = require('axios');
-const dotenv = require('dotenv');
-const { twiml } = require('twilio');
-
-dotenv.config();
+const { OpenAI } = require('openai');
+const twilio = require('twilio');
 
 const app = express();
+const port = process.env.PORT || 3000;
+
 app.use(bodyParser.urlencoded({ extended: false }));
 
-// Claude Response Handler
+const openai = new OpenAI({ apiKey: process.env.CLAUDE_API_KEY });
+const VoiceResponse = twilio.twiml.VoiceResponse;
+
+const SYSTEM_PROMPT = `You are a smart and polite voice assistant for Pravy Consulting. 
+You greet callers, understand their business consulting needs, and answer questions based on services provided at https://pravy.ca. 
+If the caller sounds confused, angry, or requests to speak to a real person, offer to connect them to a human agent. 
+Keep your answers short and professional.`;
+
 app.post('/voice', async (req, res) => {
-  const response = new twiml.VoiceResponse();
-
-  const callerSpeech = req.body.SpeechResult || req.body.Body || 'Hello';
-
-  const prompt = `You are an intelligent and polite voice receptionist for Pravy Consulting and HelioZone. Someone just said: "${callerSpeech}". Reply professionally and ask relevant follow-up if needed. Keep it short and clear.`;
+  const twiml = new VoiceResponse();
+  const speech = req.body.SpeechResult || '';
 
   try {
-    const claudeRes = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 250,
-        messages: [
-          { role: 'user', content: prompt }
-        ]
-      },
-      {
-        headers: {
-          'x-api-key': process.env.CLAUDE_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json'
-        }
-      }
-    );
+    // Ask Claude
+    const chatResponse = await openai.chat.completions.create({
+      model: 'claude-3-haiku-20240307',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: speech }
+      ]
+    });
 
-    const claudeReply = claudeRes.data?.content?.[0]?.text?.trim() || "I'm here to help you. Can you repeat that?";
+    const reply = chatResponse.choices[0].message.content;
+    const normalized = reply.toLowerCase();
 
-    response.say({ voice: 'Polly.Joanna' }, claudeReply);
-    response.redirect('/voice'); // loop back to listen again
-
-  } catch (err) {
-    console.error('Claude API error:', err.message);
-    response.say("Sorry, I had trouble understanding. Please try again.");
+    // Detect human transfer intent
+    if (normalized.includes('talk to a person') || normalized.includes('human')) {
+      twiml.say("Sure, please hold while I connect you to a human agent.");
+      twiml.dial('+15067977770'); // Replace with your human agent’s phone number
+    } else {
+      twiml.say(reply);
+      twiml.redirect('/voice'); // Continue conversation
+    }
+  } catch (error) {
+    console.error('Claude API error:', error);
+    twiml.say("Sorry, I'm having trouble understanding you. Please try again later.");
   }
 
   res.type('text/xml');
-  res.send(response.toString());
+  res.send(twiml.toString());
 });
 
-// Health check route
 app.get('/', (req, res) => {
   res.send('Claude bot is up!');
 });
 
-// Required by Render
-const port = process.env.PORT || 10000;
 app.listen(port, () => {
-  console.log(`✅ Server live at port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
