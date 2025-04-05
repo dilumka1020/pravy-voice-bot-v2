@@ -19,13 +19,7 @@ app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
   const userMessage = req.body.SpeechResult?.trim() || '';
 
-  if (!userMessage) {
-    twiml.say("I'm sorry, I didn’t catch that. Could you please repeat?");
-    res.type('text/xml');
-    return res.send(twiml.toString());
-  }
-
-  try {
+   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
