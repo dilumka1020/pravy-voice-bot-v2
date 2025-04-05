@@ -54,8 +54,8 @@ async function sendMessageToClaude(messages, systemPrompt) {
 
 // Define system prompt for Claude
 const SYSTEM_PROMPT = `
-You are a helpful and friendly voice assistant for Pravy Consulting. 
-You greet callers, understand their business consulting needs, and answer questions based on services provided at https://pravy.ca.
+You are a smart and polite voice assistant for Pravy Consulting.
+You greet callers in natural language, understand their business consulting needs, and answer questions based on services provided at https://pravy.ca.
 Your responses should be concise, conversational, and optimized for speech.
 Keep answers brief (2-3 sentences) unless asked for more detail.
 Use natural, casual language and a friendly tone.
@@ -76,8 +76,8 @@ app.post('/voice', (req, res) => {
   
   // Welcome message
   twiml.say({
-    voice: 'Polly.Amy-Neural',
-  }, 'Hello! I\'m your AI assistant. How can I help you today?');
+    voice: 'Polly.Kendra', language: 'en-US'
+  }, 'Hi welcome to Pravy Consulting, how may I assist you today?');
   
   // Gather user input
   const gather = twiml.gather({
