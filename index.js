@@ -113,7 +113,7 @@ app.post('/transcribe', async (req, res) => {
     // Check if input was received
     if (!userInput || userInput.trim() === '') {
       twiml.say({
-        voice: 'Polly.Amy-Neural',
+        voice: 'Polly.Matthew',
       }, 'I didn\'t catch that. Could you please repeat?');
       
       const gather = twiml.gather({
@@ -163,7 +163,7 @@ app.post('/transcribe', async (req, res) => {
       
       // Speak AI's response
       twiml.say({
-        voice: 'Polly.Amy-Neural',
+        voice: 'Polly.Matthew',
       }, assistantMessage);
       
       // Get more input
@@ -183,7 +183,7 @@ app.post('/transcribe', async (req, res) => {
     console.error('Error handling user input:', error);
     
     twiml.say({
-      voice: 'Polly.Amy-Neural',
+      voice: 'Polly.Matthew',
     }, 'I\'m sorry, I\'m having trouble understanding you. Please try again later.');
     
     twiml.hangup();
