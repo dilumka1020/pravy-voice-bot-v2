@@ -1,8 +1,10 @@
+// index.js
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
-const fetch = require('node-fetch');
+
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -19,7 +21,7 @@ app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
   const userMessage = req.body.SpeechResult?.trim() || '';
 
-   try {
+  try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -31,11 +33,10 @@ app.post('/voice', async (req, res) => {
         model: 'claude-3-haiku-20240307',
         max_tokens: 200,
         temperature: 0.7,
+        system: SYSTEM_PROMPT,
         messages: [
-          { role: 'user', content: userMessage },
-          { role: 'assistant', content: '' } // Required to avoid 400 error
-        ],
-        system: SYSTEM_PROMPT
+          { role: 'user', content: userMessage }
+        ]
       })
     });
 
@@ -51,7 +52,7 @@ app.post('/voice', async (req, res) => {
 
     if (normalized.includes('talk to a person') || normalized.includes('human')) {
       twiml.say("Sure, please hold while I connect you to a human agent.");
-      twiml.dial('+15067977770'); // Update with your real number
+      twiml.dial('+15067977770');
     } else {
       twiml.say(reply);
       twiml.redirect('/voice');
