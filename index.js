@@ -1,6 +1,20 @@
 // Environment variables configuration
 require('dotenv').config();
 
+// Import required packages
+const express = require('express');
+const VoiceResponse = require('twilio').twiml.VoiceResponse;
+const bodyParser = require('body-parser');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+// Initialize express app
+const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+// Store conversations by call SID
+const conversations = new Map();
+
 // Claude API integration
 async function sendMessageToClaude(messages, systemPrompt) {
   try {
@@ -38,169 +52,151 @@ async function sendMessageToClaude(messages, systemPrompt) {
   }
 }
 
-// Conversation history management
-class ConversationManager {
-  constructor() {
-    this.conversationHistory = [];
-    this.maxHistoryLength = 10; // Adjust based on your needs
+// Define system prompt for Claude
+const SYSTEM_PROMPT = `
+You are a helpful and friendly voice assistant for Pravy Consulting. 
+You greet callers, understand their business consulting needs, and answer questions based on services provided at https://pravy.ca.
+Your responses should be concise, conversational, and optimized for speech.
+Keep answers brief (2-3 sentences) unless asked for more detail.
+Use natural, casual language and a friendly tone.
+Avoid complex formatting or visual elements since your responses will be read aloud.
+Prioritize clarity and direct answers to user queries.
+If the user asks for more information, you can provide it in a follow-up message.
+`;
+
+// Handle initial call
+app.post('/voice', (req, res) => {
+  const twiml = new VoiceResponse();
+  
+  // Initialize conversation for this call
+  const callSid = req.body.CallSid;
+  if (!conversations.has(callSid)) {
+    conversations.set(callSid, []);
   }
+  
+  // Welcome message
+  twiml.say({
+    voice: 'Polly.Amy-Neural',
+  }, 'Hello! I\'m your AI assistant. How can I help you today?');
+  
+  // Gather user input
+  const gather = twiml.gather({
+    input: 'speech',
+    action: '/transcribe',
+    speechTimeout: 'auto',
+    speechModel: 'phone_call',
+    enhanced: 'true',
+    language: 'en-US'
+  });
+  
+  // Timeout handler
+  twiml.redirect('/voice');
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
 
-  // Add a message to the conversation history
-  addMessage(role, content) {
-    if (!content || content.trim() === '') {
-      throw new Error(`Cannot add empty ${role} message to conversation`);
-    }
-    
-    this.conversationHistory.push({ role, content });
-    
-    // Trim history if it gets too long
-    if (this.conversationHistory.length > this.maxHistoryLength * 2) {
-      // Keep the first message for context and remove older messages
-      const firstMessage = this.conversationHistory[0];
-      this.conversationHistory = [
-        firstMessage,
-        ...this.conversationHistory.slice(-this.maxHistoryLength * 2 + 1)
-      ];
-    }
-  }
-
-  // Get the current conversation history
-  getHistory() {
-    return [...this.conversationHistory];
-  }
-
-  // Clear the conversation history
-  clearHistory() {
-    this.conversationHistory = [];
-  }
-}
-
-// Voice agent implementation
-class ClaudeVoiceAgent {
-  constructor(systemPrompt = "You are a helpful voice assistant. Keep your responses concise and conversational, suitable for speech. Limit responses to 2-3 sentences when possible unless the user asks for more detail. Speak naturally as if having a conversation.") {
-    this.conversationManager = new ConversationManager();
-    this.systemPrompt = systemPrompt;
-  }
-
-  // Process user voice input
-  async processVoiceInput(transcribedText) {
-    try {
-      if (!transcribedText || transcribedText.trim() === '') {
-        return {
-          success: false,
-          response: "I didn't receive any input. Please try speaking again."
-        };
-      }
-
+// Handle transcription and response
+app.post('/transcribe', async (req, res) => {
+  const twiml = new VoiceResponse();
+  const callSid = req.body.CallSid;
+  const userInput = req.body.SpeechResult;
+  
+  try {
+    // Check if input was received
+    if (!userInput || userInput.trim() === '') {
+      twiml.say({
+        voice: 'Polly.Amy-Neural',
+      }, 'I didn\'t catch that. Could you please repeat?');
+      
+      const gather = twiml.gather({
+        input: 'speech',
+        action: '/transcribe',
+        speechTimeout: 'auto',
+        speechModel: 'phone_call',
+        enhanced: 'true',
+        language: 'en-US'
+      });
+      
+      twiml.redirect('/voice');
+    } else {
+      console.log(`User said: ${userInput}`);
+      
+      // Get conversation history for this call
+      let conversationHistory = conversations.get(callSid) || [];
+      
       // Add user message to conversation
-      this.conversationManager.addMessage('user', transcribedText);
+      conversationHistory.push({
+        role: 'user',
+        content: userInput
+      });
       
-      // Get conversation history
-      const messages = this.conversationManager.getHistory();
+      // Send to Claude API
+      const claudeResponse = await sendMessageToClaude(conversationHistory, SYSTEM_PROMPT);
       
-      // Send to Claude API with system prompt
-      const claudeResponse = await sendMessageToClaude(messages, this.systemPrompt);
-      
-      // Extract the text response
+      // Extract text from Claude's response
       const assistantMessage = claudeResponse.content
         .filter(item => item.type === 'text')
         .map(item => item.text)
         .join(' ');
       
-      // Add assistant response to conversation history
-      if (assistantMessage) {
-        this.conversationManager.addMessage('assistant', assistantMessage);
-      }
+      console.log(`Claude responded: ${assistantMessage}`);
       
-      return {
-        success: true,
-        response: assistantMessage
-      };
-    } catch (error) {
-      console.error('Error processing voice input:', error);
-      return {
-        success: false,
-        response: "Sorry, I'm having trouble understanding you. Please try again later.",
-        error: error.message
-      };
-    }
-  }
-
-  // Reset the conversation
-  resetConversation() {
-    this.conversationManager.clearHistory();
-    return "Conversation has been reset.";
-  }
-
-  // Update the system prompt if needed
-  updateSystemPrompt(newPrompt) {
-    this.systemPrompt = newPrompt;
-    return "System prompt updated successfully.";
-  }
-}
-
-// Example usage with Express server for a voice API endpoint
-const express = require('express');
-const app = express();
-app.use(express.json());
-
-// Define your custom system prompt here - you can customize this as needed
-const SYSTEM_PROMPT = `
-You are a helpful and friendly voice assistant for Pravy Consulting. 
-Your responses should be concise, conversational, and optimized for speech.
-Keep answers brief (2-3 sentences) unless asked for more detail.
-Use natural, casual language and a friendly tone.
-Avoid complex formatting or visual elements since your responses will be read aloud.
-Prioritize clarity and direct answers to user queries.You can refer to https://pravyconsulting.com for more information about the company.
-If the user asks for more information, you can provide it in a follow-up message.
-`;
-
-// Initialize the voice agent with custom prompt
-const voiceAgent = new ClaudeVoiceAgent(SYSTEM_PROMPT);
-
-// API endpoint to process voice input
-app.post('/api/voice', async (req, res) => {
-  try {
-    const { text } = req.body;
-    
-    if (!text) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No transcribed text provided' 
+      // Add Claude response to conversation history
+      conversationHistory.push({
+        role: 'assistant',
+        content: assistantMessage
       });
+      
+      // Update conversation history
+      conversations.set(callSid, conversationHistory);
+      
+      // Speak Claude's response
+      twiml.say({
+        voice: 'Polly.Amy-Neural',
+      }, assistantMessage);
+      
+      // Get more input
+      const gather = twiml.gather({
+        input: 'speech',
+        action: '/transcribe',
+        speechTimeout: 'auto',
+        speechModel: 'phone_call',
+        enhanced: 'true',
+        language: 'en-US'
+      });
+      
+      // Fallback if no input received
+      twiml.redirect('/voice');
     }
-    
-    const result = await voiceAgent.processVoiceInput(text);
-    return res.json(result);
   } catch (error) {
-    console.error('API error:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error', 
-      error: error.message 
-    });
-  }
-});
-
-// Reset conversation endpoint
-app.post('/api/reset', (req, res) => {
-  const message = voiceAgent.resetConversation();
-  return res.json({ success: true, message });
-});
-
-// Update system prompt endpoint
-app.post('/api/update-prompt', (req, res) => {
-  const { prompt } = req.body;
-  
-  if (!prompt) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'No prompt provided' 
-    });
+    console.error('Error handling user input:', error);
+    
+    twiml.say({
+      voice: 'Polly.Amy-Neural',
+    }, 'I\'m sorry, I\'m having trouble understanding you. Please try again later.');
+    
+    twiml.hangup();
   }
   
-  const message = voiceAgent.updateSystemPrompt(prompt);
-  return res.json({ success: true, message });
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Clean up completed calls to prevent memory leaks
+app.post('/call-status', (req, res) => {
+  const callSid = req.body.CallSid;
+  const callStatus = req.body.CallStatus;
+  
+  if (callStatus === 'completed' || callStatus === 'failed' || callStatus === 'busy' || callStatus === 'no-answer') {
+    // Remove conversation history for this call
+    if (conversations.has(callSid)) {
+      conversations.delete(callSid);
+      console.log(`Removed conversation history for call ${callSid}`);
+    }
+  }
+  
+  res.sendStatus(200);
 });
 
 // Start the server
@@ -208,10 +204,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Voice agent server running on port ${PORT}`);
 });
-
-// Export for testing or importing in other files
-module.exports = {
-  ClaudeVoiceAgent,
-  ConversationManager,
-  sendMessageToClaude
-};
