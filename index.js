@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const { OpenAI } = require('openai');
+const { default: Anthropic } = require('@anthropic-ai/sdk');
 const twilio = require('twilio');
 
 const app = express();
@@ -9,7 +9,7 @@ const port = process.env.PORT || 3000;
 
 app.use(bodyParser.urlencoded({ extended: false }));
 
-const openai = new OpenAI({ apiKey: process.env.CLAUDE_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
 const SYSTEM_PROMPT = `You are a smart and polite voice assistant for Pravy Consulting. 
@@ -22,25 +22,24 @@ app.post('/voice', async (req, res) => {
   const speech = req.body.SpeechResult || '';
 
   try {
-    // Ask Claude
-    const chatResponse = await openai.chat.completions.create({
+    const chatResponse = await anthropic.messages.create({
       model: 'claude-3-haiku-20240307',
+      max_tokens: 500,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: speech }
+        { role: 'user', content: speech },
+        { role: 'assistant', content: SYSTEM_PROMPT }
       ]
     });
 
-    const reply = chatResponse.choices[0].message.content;
+    const reply = chatResponse.content[0].text;
     const normalized = reply.toLowerCase();
 
-    // Detect human transfer intent
     if (normalized.includes('talk to a person') || normalized.includes('human')) {
       twiml.say("Sure, please hold while I connect you to a human agent.");
       twiml.dial('+15067977770'); // Replace with your human agent’s phone number
     } else {
       twiml.say(reply);
-      twiml.redirect('/voice'); // Continue conversation
+      twiml.redirect('/voice');
     }
   } catch (error) {
     console.error('Claude API error:', error);
