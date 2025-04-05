@@ -20,104 +20,12 @@ const openai = new OpenAI({
 // Store conversations by call SID
 const conversations = new Map();
 
-// Add a knowledge base to enrich your agent's responses
-const knowledgeBase = {
-  products: {
-    "product1": {
-      name: "Premium Widget",
-      price: "$99.99",
-      features: ["Durable", "Lightweight", "Water-resistant"],
-      availability: "In stock"
-    },
-    "product2": {
-      name: "Deluxe Gadget",
-      price: "$149.99",
-      features: ["Smart connectivity", "Voice control", "Long battery life"],
-      availability: "Limited stock"
-    }
-  },
-  faq: {
-    "return policy": "You can return any product within 30 days for a full refund.",
-    "shipping": "We offer free shipping on all orders over $50.",
-    "warranty": "All products come with a 1-year limited warranty."
-  },
-  locations: {
-    "store1": {
-      address: "123 Main Street, Anytown",
-      hours: "Monday-Friday: 9am-6pm, Saturday: 10am-4pm",
-      phone: "555-123-4567"
-    }
-  },
-  // Add more categories as needed
-};
-
-// Function to extract relevant information from the knowledge base
-function extractRelevantInfo(userInput) {
-  if (!userInput) return null;
-  
-  const input = userInput.toLowerCase();
-  let relevantInfo = [];
-  
-  // Check for product information
-  Object.keys(knowledgeBase.products).forEach(productKey => {
-    const product = knowledgeBase.products[productKey];
-    if (input.includes(product.name.toLowerCase()) || input.includes(productKey.toLowerCase())) {
-      relevantInfo.push(`Product Information - ${product.name}:
-- Price: ${product.price}
-- Features: ${product.features.join(", ")}
-- Availability: ${product.availability}`);
-    }
-  });
-  
-  // Check for FAQ information
-  Object.keys(knowledgeBase.faq).forEach(faqKey => {
-    if (input.includes(faqKey)) {
-      relevantInfo.push(`FAQ - ${faqKey}: ${knowledgeBase.faq[faqKey]}`);
-    }
-  });
-  
-  // Check for location information
-  Object.keys(knowledgeBase.locations).forEach(locationKey => {
-    const location = knowledgeBase.locations[locationKey];
-    if (input.includes(locationKey) || input.includes("store") || input.includes("location")) {
-      relevantInfo.push(`Store Information - ${locationKey}:
-- Address: ${location.address}
-- Hours: ${location.hours}
-- Phone: ${location.phone}`);
-    }
-  });
-  
-  // Check for specific keywords and provide general information
-  const keywords = {
-    "pricing": "Our products range from $49.99 to $299.99 depending on features.",
-    "discount": "We currently offer a 15% discount for first-time customers.",
-    "sale": "Our annual sale is currently running with up to 30% off selected items."
-  };
-  
-  Object.keys(keywords).forEach(keyword => {
-    if (input.includes(keyword)) {
-      relevantInfo.push(keywords[keyword]);
-    }
-  });
-  
-  return relevantInfo.length > 0 ? relevantInfo.join("\n\n") : null;
-}
-
 // OpenAI API integration
-async function sendMessageToOpenAI(messages, systemPrompt, userInput) {
+async function sendMessageToOpenAI(messages, systemPrompt) {
   try {
-    // Extract relevant information from knowledge base based on user input
-    const relevantInfo = extractRelevantInfo(userInput);
-    
-    // Append relevant information to system prompt if found
-    let enhancedPrompt = systemPrompt;
-    if (relevantInfo) {
-      enhancedPrompt += "\n\nHere is some additional information that may be helpful:\n" + relevantInfo;
-    }
-    
     // Format messages for OpenAI API
     const formattedMessages = [
-      { role: 'system', content: enhancedPrompt }
+      { role: 'system', content: systemPrompt }
     ];
     
     // Add conversation history
@@ -130,13 +38,13 @@ async function sendMessageToOpenAI(messages, systemPrompt, userInput) {
     
     // Call OpenAI API
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',  // Use appropriate model - gpt-4o for best results
+      model: 'gpt-4o',  // Use appropriate model - can replace with gpt-3.5-turbo for cost efficiency
       messages: formattedMessages,
       max_tokens: 1000,
       temperature: 0.7
     });
     
-    // Return response in a format similar to Claude for consistency
+    // Return response in a format similar to what we expect
     return {
       content: [
         {
@@ -153,12 +61,14 @@ async function sendMessageToOpenAI(messages, systemPrompt, userInput) {
 
 // Define system prompt for the AI
 const SYSTEM_PROMPT = `
-You are a helpful and friendly voice assistant speaking with someone over the phone.
+You are a smart and polite voice assistant for Pravy Consulting.
+You greet callers in natural language, understand their business consulting needs, and answer questions based on services provided at https://pravy.ca.
 Your responses should be concise, conversational, and optimized for speech.
 Keep answers brief (2-3 sentences) unless asked for more detail.
 Use natural, casual language and a friendly tone.
-Avoid references to visual elements, links, or anything that wouldn't work in a voice call.
-Speak in complete sentences that sound natural when read aloud.
+Avoid complex formatting or visual elements since your responses will be read aloud.
+Prioritize clarity and direct answers to user queries.
+If the user asks for more information, you can provide it in a follow-up message.
 `;
 
 // Handle initial call
@@ -173,8 +83,8 @@ app.post('/voice', (req, res) => {
   
   // Welcome message
   twiml.say({
-    voice: 'Polly.Amy-Neural',
-  }, 'Hello! I\'m your AI assistant. How can I help you today?');
+    voice: 'Polly.Matthew',
+  }, 'Hi, Welcome to Pravy Consulting... How may I assist you today?');
   
   // Gather user input
   const gather = twiml.gather({
@@ -228,8 +138,8 @@ app.post('/transcribe', async (req, res) => {
         content: userInput
       });
       
-      // Send to OpenAI API with the user input for context enrichment
-      const aiResponse = await sendMessageToOpenAI(conversationHistory, SYSTEM_PROMPT, userInput);
+      // Send to OpenAI API
+      const aiResponse = await sendMessageToOpenAI(conversationHistory, SYSTEM_PROMPT);
       
       // Extract text from AI response
       const assistantMessage = aiResponse.content[0].text;
