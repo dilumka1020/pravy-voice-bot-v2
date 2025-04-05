@@ -59,10 +59,14 @@ async function sendMessageToOpenAI(messages, systemPrompt) {
   }
 }
 
+const fs = require('fs');
+const knowledgeBase = fs.readFileSync('./pravy-knowledge.txt', 'utf-8');
+
 // Define system prompt for the AI
 const SYSTEM_PROMPT = `
 You are a smart and polite voice assistant for Pravy Consulting.
-You greet callers in natural language, understand their business consulting needs, and answer questions based on services provided at https://pravy.ca.
+You greet callers in natural language, understand their business consulting needs, and answer questions based on the provided knowledge base.
+You have access to the following knowledge base:${knowledgeBase}
 Your responses should be concise, conversational, and optimized for speech.
 Keep answers brief (2-3 sentences) unless asked for more detail.
 Use natural, casual language and a friendly tone.
